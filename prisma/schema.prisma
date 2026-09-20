@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  YCT
+  CCT
+  ACT
+  AACT
+}
+
+enum RemovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+enum StockTransactionType {
+  RECEIPT
+  REMOVAL
+  RETURN
+  ADJUSTMENT
+  REVERSAL
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  username      String   @unique
+  passwordHash  String
+  role          UserRole
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastLoginAt   DateTime?
+
+  permissions   Permission[]
+  performedTransactions StockTransaction[] @relation("PerformedTransactions")
+  requestedRemovals RemovalRequest[] @relation("RequestedRemovals")
+  approvedRemovals  RemovalRequest[] @relation("ApprovedRemovals")
+  rejectedRemovals  RemovalRequest[] @relation("RejectedRemovals")
+  auditLogs     AuditLog[]
+}
+
+model Permission {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  key       String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+}
+
+model Design {
+  id           Int      @id @default(autoincrement())
+  designNumber String  @unique
+  name         String
+  description  String?
+  category     String?
+  active       Boolean @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  variants ProductVariant[]
+}
+
+model ProductVariant {
+  id              Int      @id @default(autoincrement())
+  designId         Int
+  color            String
+  size             String
+  unit             String   @default("pieces")
+  currentQuantity  Int      @default(0)
+  minimumStock     Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  design Design @relation(fields: [designId], references: [id], onDelete: Restrict)
+  transactions StockTransaction[]
+  removalRequests RemovalRequest[]
+
+  @@unique([designId, color, size])
+}
+
+model StockTransaction {
+  id              Int      @id @default(autoincrement())
+  variantId       Int
+  type            StockTransactionType
+  quantity        Int
+  quantityBefore  Int
+  quantityAfter   Int
+  reason          String?
+  reference       String?
+  performedById   Int
+  removalRequestId Int?
+  createdAt       DateTime @default(now())
+
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  performedBy User @relation("PerformedTransactions", fields: [performedById], references: [id], onDelete: Restrict)
+  removalRequest RemovalRequest? @relation(fields: [removalRequestId], references: [id], onDelete: SetNull)
+}
+
+model RemovalRequest {
+  id              Int      @id @default(autoincrement())
+  variantId       Int
+  quantity        Int
+  reason          String
+  destination     String?
+  notes           String?
+  stockAtRequest  Int
+  requestedById   Int
+  status          RemovalStatus @default(PENDING)
+  createdAt       DateTime @default(now())
+  approvedById    Int?
+  approvedAt      DateTime?
+  approvalComment String?
+  rejectedById    Int?
+  rejectedAt      DateTime?
+  rejectionReason String?
+
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  requestedBy User @relation("RequestedRemovals", fields: [requestedById], references: [id], onDelete: Restrict)
+  approvedBy User? @relation("ApprovedRemovals", fields: [approvedById], references: [id], onDelete: Restrict)
+  rejectedBy User? @relation("RejectedRemovals", fields: [rejectedById], references: [id], onDelete: Restrict)
+  transactions StockTransaction[]
+}
+
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  userId      Int?
+  action      String
+  entityType  String?
+  entityId    Int?
+  description String
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
